@@ -1,0 +1,23 @@
+
+[functions.send-web-push]
+enabled = true
+# verify_jwt resta false perchÃ© la chiamata arriva dal database (pg_net) e non da un utente loggato:
+# l'accesso Ã¨ protetto dall'header x-push-secret, verificato contro il segreto nel Vault (vedi la funzione).
+verify_jwt = false
+import_map = "./functions/send-web-push/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/send-web-push/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/send-web-push/*.html" ]
+
+[functions.feature-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/feature-worker/index.ts"
+
+[functions.visit-cover-search]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/visit-cover-search/index.ts"

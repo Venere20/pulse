@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),ts=require('typescript'),assert=require('node:assert/strict');
+const load=(file,require)=>{const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:m,exports:m.exports,require});return m.exports;};
+const protocol=load('src/features/canvas/protocol.ts',()=>{}),tools=load('src/features/canvas/tools.ts',()=>{}),eraser=load('src/features/canvas/eraser.ts',n=>n==='./protocol'?protocol:tools),persistent=load('src/features/canvas/persistentBoard.ts',n=>n==='./eraser'?eraser:protocol);
+const line={id:'a:line',author:'a',color:'#FF4D85',width:6,brush:'ink',points:[100,500,300,500,500,500,700,500,900,500]};
+const cut=[900,500,900,500,20],partial=eraser.erasePortion(line,'a',cut);
+assert.notEqual(partial,line);assert.deepEqual(partial.points,line.points);assert.equal(line.erasures,undefined);assert.deepEqual([...partial.erasures],cut);
+assert.equal(eraser.erasePortion(line,'b',cut),line);assert.equal(eraser.erasePortion(line,'a',[100,100,900,100,20]),line);assert.equal(eraser.appendErasures(partial,cut),partial);
+assert.ok(eraser.erasePortion(line,'a',[500,100,500,900,20]).erasures,'Fast swept input hits between samples');assert.match(eraser.eraserPath(cut),/a20 20/);
+for(const bad of [[0],[0,0,0,0,0],[0,0,0,0,41],[Infinity,0,0,0,20]])assert.equal(protocol.validErasures(bad),false);
+const disk=new Map(),storage={getItem:k=>disk.get(k)??null,setItem:(k,v)=>disk.set(k,v)};
+let server={id:1,epoch:1,revision:0,strokes:[line],deleted_ids:[]},online=false;
+const apply=async op=>{if(!online)throw Error('offline');server={...server,revision:server.revision+1,strokes:server.strokes.map(s=>op.action==='erase'&&s.id===op.id?eraser.appendErasures(s,op.erasures):s)};return structuredClone(server);};
+(async()=>{let board=persistent.createPersistentBoard('a','b',storage,apply);board.receive(server);board.erase(line.id,cut);await board.flush();assert.ok(board.view().pending);assert.deepEqual([...board.view().strokes[0].erasures],cut);board=persistent.createPersistentBoard('a','b',storage,apply);assert.deepEqual([...board.view().strokes[0].erasures],cut,'Offline restart retains erasure');online=true;await board.flush();assert.equal(board.view().pending,false);assert.deepEqual([...server.strokes[0].erasures],cut);assert.throws(()=>board.erase('b:line',cut));console.log('PASS partial geometry, original points immutable, own strokes only, continuous swept erasing, duplicate/invalid cuts, offline erasure/restart/retry and queue ownership.');})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,0 +1,13 @@
+const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+let cursor=0,active=true,url='signed:first';const slots=[];
+const react={createElement:(type,props)=>({type,props}),useState(initial){const i=cursor++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value}]}};react.default=react;
+const mocks={react,'react-native':{Image:'Image',View:'View',Platform:{OS:'android'},StyleSheet:{flatten:style=>style}},'../hooks/useActivity':{useScreenActive:()=>active},'../hooks/useSignedImage':{useSignedImage:()=>({url,error:false,onError(){}})},'../services/memoryPhotos':{memoryPhotoStoragePath:x=>x},'../services/memoryPhotoPaths':{memoryPreviewUrl:()=>null}};
+const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/components/MemoryPhoto.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,{module:m,exports:m.exports,require:name=>mocks[name]});
+const draw=props=>{cursor=0;const wrapper=m.exports.MemoryPhoto(props);return typeof wrapper.type==='function'?wrapper.type(wrapper.props):wrapper};
+let reported=0,forwarded=0;const props={uri:'old-photo',adaptive:true,style:{width:'100%',height:300},onAspectRatio:r=>reported=r,onLoad:()=>forwarded++};
+let image=draw(props);image.props.onLoad({nativeEvent:{source:{width:450,height:900}}});image=draw(props);assert.equal(image.props.style.aspectRatio,.5);assert.equal(image.props.style.height,undefined);assert.equal(image.props.style.width,'100%');assert.equal(reported,.5);assert.equal(forwarded,1);
+url='signed:renewed';image=draw(props);assert.equal(image.props.style.aspectRatio,.5,'Signature renewal preserves dimensions');
+image=draw({...props,uri:'another-photo'});assert.equal(image.props.style.aspectRatio,1,'New photo cannot inherit previous ratio');image.props.onLoad({nativeEvent:{target:{naturalWidth:900,naturalHeight:450}}});image=draw({...props,uri:'another-photo'});assert.equal(image.props.style.aspectRatio,2,'Web load event supplies natural dimensions');
+image.props.onLoad({nativeEvent:{source:{width:0,height:0}}});assert.equal(draw({...props,uri:'another-photo'}).props.style.aspectRatio,2,'Invalid dimensions ignored');
+const fixed=draw({...props,adaptive:false});assert.equal(fixed.props.style.height,300,'Non-adaptive consumers retain existing size');active=false;assert.equal(draw(props).type,'View','Inactive screen never loads private image');
+console.log('PASS adaptive MemoryPhoto: native/web dimensions, fixed height removed, full-width aspect ratio, renewed URLs, new photo isolation, invalid load dimensions, callbacks and fixed-size consumers');

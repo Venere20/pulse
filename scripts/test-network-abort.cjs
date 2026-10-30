@@ -1,0 +1,15 @@
+const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+function load(path,mocks={},extra={}){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:m,exports:m.exports,require:n=>mocks[n],AbortController,setTimeout,clearTimeout,Date,...extra});return m.exports;}
+const abort=load('src/utils/abort.ts');
+const watchdog=setTimeout(()=>{console.error('FAIL: network abort test remained pending');process.exitCode=1;},10000);
+(async()=>{
+ const canceled=new AbortController();const delay=abort.abortableDelay(30000,canceled.signal);canceled.abort();await assert.rejects(delay,e=>e.name==='AbortError');
+ const pending=[];const fetch=(url,init={})=>new Promise((resolve,reject)=>{pending.push({url,signal:init.signal,resolve});if(init.signal?.aborted){reject(new Error('aborted'));return;}init.signal?.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});});
+ const nom=load('src/utils/nominatim.ts',{'react-native':{Platform:{OS:'web'}},'./abort':abort},{fetch});
+ const first=nom.nominatimFetch('first');await Promise.resolve();const next=new AbortController();const queued=nom.nominatimFetch('obsolete',{signal:next.signal});next.abort();pending[0].resolve({ok:true});await first;await assert.rejects(queued,e=>e.name==='AbortError');assert.equal(pending.length,1);
+ const geo=load('src/utils/geo.ts',{'./abort':abort,'./nominatim':nom},{fetch});let controller=new AbortController();const coordinates=geo.getCityCoordinates('Citta test',controller.signal);controller.abort();await assert.rejects(coordinates,e=>e.name==='AbortError');assert.equal(pending.length,2,'No fallback request after cancellation');
+ const route=load('src/utils/routing.ts',{'./abort':abort,'./geo':{...geo,getCityCoordinates:async()=>({lat:1,lon:2})}},{fetch});controller=new AbortController();const road=route.getRoute({lat:1,lon:2},{lat:3,lon:4},controller.signal);assert.ok(pending.at(-1).signal);controller.abort();await assert.rejects(road,e=>e.name==='AbortError');assert.equal(pending.at(-1).signal.aborted,true);
+ const weather=load('src/utils/weather.ts',{'./abort':abort,'./geo':{getCityCoordinates:async()=>({lat:1,lon:2})},'./dates':{localDateStr:()=> '2026-10-13',addDaysStr:()=> '2026-10-28',daysBetween:()=>1}},{fetch});controller=new AbortController();const temperatures=weather.fetchCityWeather('Citta',controller.signal);await Promise.resolve();controller.abort();await assert.rejects(temperatures,e=>e.name==='AbortError');
+ controller=new AbortController();controller.abort();await assert.rejects(route.getRoute({lat:1,lon:2},{lat:3,lon:4},controller.signal),e=>e.name==='AbortError');
+ console.log('PASS abortable delays, canceled queued geocoding never fetched, in-flight geo/route/weather signals canceled, no fallback or cached result after cancellation.');
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>clearTimeout(watchdog));

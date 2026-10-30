@@ -1,0 +1,44 @@
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const { PGlite } = require('@electric-sql/pglite');
+const A='11111111-1111-4111-8111-111111111111', B='22222222-2222-4222-8222-222222222222';
+const AA='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', BB='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+(async () => {
+ const db = new PGlite();
+ try {
+  let setup=fs.readFileSync('scripts/test-feature-database.cjs','utf8').match(/await db.exec\(`([\s\S]*?)`\);/)[1];
+  for(const [k,v] of Object.entries({A,B,AA,BB})) setup=setup.replaceAll('${'+k+'}',v);
+  await db.exec(setup);
+  for(const f of fs.readdirSync('supabase/migrations').filter(f=>f.startsWith('20261010')||f.startsWith('20261011')).sort()) await db.exec(fs.readFileSync(path.join('supabase/migrations',f),'utf8'));
+  await db.exec(fs.readFileSync('supabase/migrations/20261017000000_story_photos.sql','utf8'));
+  const login = async uid => db.exec(`reset role;set role authenticated;set request.jwt.claim.sub='${uid}';`);
+  const rpc = async (photos,id=null,title='Un momento') => (await db.query('select public.save_story_moment_v2($1,current_date,$2,$3,$4) id',[title,'Ricordo',photos,id])).rows[0].id;
+  const paths = Array.from({length:4},(_,i)=>`${A}/176000000000${i}-testphoto.jpg`);
+  await login(AA);
+  for(const p of paths) await db.query("insert into storage.objects(bucket_id,name)values('story-photos',$1)",[p]);
+  const id = await rpc(paths.slice(0,3));
+  assert.equal((await db.query('select photo_paths from public.story_moments where id=$1',[id])).rows[0].photo_paths.length,3);
+  await assert.rejects(rpc(paths), /massimo 3/);
+  await assert.rejects(rpc([paths[0],paths[0]]), /duplicate/);
+  await assert.rejects(rpc([`${A}/1760000000000-missing.jpg`]), /non disponibile/);
+  await assert.rejects(rpc([`${A}/../escape.jpg`]), /non disponibile/);
+  await db.query('select public.save_story_moment($1,current_date,$2,$3)',['Testo aggiornato','Testo',id]);
+  assert.equal((await db.query('select cardinality(photo_paths)n from public.story_moments where id=$1',[id])).rows[0].n,3,'Old clients preserve attached photos');
+  await login(BB);
+  assert.equal((await db.query("select * from storage.objects where bucket_id='story-photos'")).rows.length,4,'Partner sees private photos');
+  await assert.rejects(rpc([paths[0]]), /non autorizzata/);
+  await assert.rejects(rpc([],id), /solo i tuoi/);
+  await assert.rejects(db.query("insert into storage.objects(bucket_id,name)values('story-photos',$1)",[`${A}/1760000000000-forged.jpg`]));
+  assert.equal((await db.query("delete from storage.objects where bucket_id='story-photos' returning id")).rows.length,0,'Partner cannot delete author uploads');
+  await login('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+  assert.equal((await db.query("select * from storage.objects where bucket_id='story-photos'")).rows.length,0);
+  assert.equal((await db.query('select * from public.story_moments')).rows.length,0);
+  await assert.rejects(rpc([]));
+  await db.exec('reset role;set role anon;');await assert.rejects(rpc([]));
+  await login(AA); await rpc([],id);
+  assert.equal((await db.query('select cardinality(photo_paths)n from public.story_moments where id=$1',[id])).rows[0].n,0);
+  const text="Momento'); drop table users; --";
+  await rpc([],id,text);assert.equal((await db.query('select title from public.story_moments where id=$1',[id])).rows[0].title,text);
+  await db.exec('reset role;');assert.equal((await db.query("select public from storage.buckets where id='story-photos'")).rows[0].public,false);
+  console.log('PASS story photos: 3-photo save, remove, old-client compatibility, private bucket, shared viewing, owner-only upload/edit/delete, malformed/missing/duplicate paths rejected, third account and anonymous denied, literal SQL-like text preserved.');
+ } finally { await db.close(); }
+})().catch(e=>{console.error(e);process.exitCode=1});

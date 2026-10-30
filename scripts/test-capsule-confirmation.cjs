@@ -1,0 +1,26 @@
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const{PGlite}=require('@electric-sql/pglite');
+(async()=>{const db=new PGlite();try{
+ const vars={A:'11111111-1111-4111-8111-111111111111',B:'22222222-2222-4222-8222-222222222222',AA:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',BB:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
+ let setup=fs.readFileSync('scripts/test-feature-database.cjs','utf8').match(/await db.exec\(`([\s\S]*?)`\);/)[1];for(const[k,v]of Object.entries(vars))setup=setup.replaceAll('${'+k+'}',v);await db.exec(setup);
+ for(const f of fs.readdirSync('supabase/migrations').filter(f=>f.startsWith('20261010')||f.startsWith('20261011')).sort())await db.exec(fs.readFileSync(path.join('supabase/migrations',f),'utf8'));
+ for(const f of ['20261017000000_story_photos.sql','20261018120000_capsule_story_photo_layouts.sql','20261018140000_capsule_photo_confirmation.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+f,'utf8'));
+ const login=uid=>db.exec(`reset role;set role authenticated;set request.jwt.claim.sub='${uid}';`);
+ const one=async(q,a=[])=>(await db.query(q,a)).rows[0];await login(vars.AA);
+ const id=(await one('select create_capsule_draft()id')).id,original=id+'/old.jpg',added=id+'/new.jpg';
+ await db.query('select set_capsule_photos($1,$2)',[id,[original]]);await db.query("insert into storage.objects(bucket_id,name)values('capsules',$1)",[original]);
+ await db.query("select seal_capsule($1,'Originale','manual',null,null,'Quando vuoi','Testo originale',false)",[id]);
+ const contents=()=>one('select body,photo_paths,photo_settings from capsule_contents where capsule_id=$1',[id]);const before=await contents();
+ await db.query('select reserve_capsule_photo($1,$2)',[id,added]);await db.query("insert into storage.objects(bucket_id,name)values('capsules',$1)",[added]);
+ assert.deepEqual(await contents(),before,'Staged replacement never changes original contents');
+ const seal=(paths,kind='manual')=>db.query("select seal_capsule_v3($1,'Modificata',$2,null,null,'Quando vuoi','Testo nuovo',$3,'{}',false)",[id,kind,paths]);
+ await assert.rejects(seal([added],'date'));assert.deepEqual(await contents(),before,'Failed seal rolls back paths, body and layout');
+ await db.query('select abandon_capsule_photos($1,$2)',[id,[added,original]]);assert.deepEqual(await contents(),before,'Cancel preserves all published photos');
+ await assert.rejects(seal([added]),/non autorizzata/);
+ await db.query('select reserve_capsule_photo($1,$2)',[id,added]);await seal([added]);assert.deepEqual((await contents()).photo_paths,[added]);assert.equal((await contents()).body,'Testo nuovo');
+ await login(vars.BB);await assert.rejects(db.query('select reserve_capsule_photo($1,$2)',[id,id+'/forged.jpg']));assert.equal((await db.query("select * from storage.objects where bucket_id='capsules'")).rows.length,0,'Closed capsule is private');
+ await db.query('select open_capsule($1,true)',[id]);assert.deepEqual((await one('select photo_paths from capsule_contents where capsule_id=$1',[id])).photo_paths,[added]);
+ assert.deepEqual((await db.query("select name from storage.objects where bucket_id='capsules'")).rows.map(x=>x.name),[added],'Recipient cannot read removed or staged files');
+ await login(vars.AA);await assert.rejects(seal([]));
+ console.log('PASS capsule confirmation: staged uploads, cancel preserves originals, atomic replacement/rollback, legacy upload compatibility, author-only writes, closed privacy and removed-file isolation');
+}finally{await db.close()}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "couples-app",
+    "slug": "couples-app",
+    "version": "1.6.1",
+    "orientation": "portrait",
+    "icon": "./assets/pulse/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/pulse/adaptive-icon.png",
+        "monochromeImage": "./assets/pulse/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.venere20.couplesapp",
+      "versionCode": 7,
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/pulse/favicon.png",
+      "name": "Pulse",
+      "shortName": "Pulse",
+      "lang": "it",
+      "themeColor": "#0E0D12",
+      "backgroundColor": "#0E0D12",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "L'app usa le tue foto per i ricordi degli incontri e le capsule del tempo."
+        }
+      ],
+      "expo-sharing",
+      "expo-router",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a6ab1982-8aae-441d-a2fd-80b7767d80cd"
+      }
+    },
+    "scheme": "pulse",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a6ab1982-8aae-441d-a2fd-80b7767d80cd",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
+  }
+}

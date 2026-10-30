@@ -1,0 +1,41 @@
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+const {PGlite}=require('@electric-sql/pglite');
+const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222',AA='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',BB='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const migration=fs.readFileSync('supabase/migrations/20261016120000_monthly_anniversaries.sql','utf8');
+const moduleLogic={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/features/anniversaries/logic.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:moduleLogic,exports:moduleLogic.exports,Date});
+const {nextAnniversary,isAnniversaryToday,validAnniversaryDate}=moduleLogic.exports;
+const monthly={first_day:'2026-01-31',annual:false,monthly:true};
+assert.equal(nextAnniversary(monthly,'2026-01-31'),'2026-02-28');
+assert.equal(nextAnniversary(monthly,'2026-02-28'),'2026-02-28');
+assert.equal(nextAnniversary(monthly,'2026-03-01'),'2026-03-31');
+assert.equal(nextAnniversary({...monthly,first_day:'2027-12-31'},'2026-10-16'),'2028-01-31');
+assert.equal(nextAnniversary({...monthly,first_day:'2027-01-31'},'2028-02-01'),'2028-02-29');
+assert.equal(isAnniversaryToday(monthly,'2026-01-31'),false);assert.equal(isAnniversaryToday(monthly,'2026-02-28'),true);assert.equal(isAnniversaryToday(monthly,'2026-03-28'),false);
+for(const date of ['2026-02-30','2026-2-01','2025-02-29','1899-12-31','not a date'])assert.equal(validAnniversaryDate(date),false,date);
+assert.equal(validAnniversaryDate('2028-02-29'),true);
+(async()=>{const db=new PGlite();try{
+ let setup=fs.readFileSync('scripts/test-feature-database.cjs','utf8').match(/await db.exec\(`([\s\S]*?)`\);/)[1];for(const [k,v]of Object.entries({A,B,AA,BB}))setup=setup.replaceAll('${'+k+'}',v);await db.exec(setup);
+ for(const file of fs.readdirSync('supabase/migrations').filter(f=>f.startsWith('20261010')||f.startsWith('20261011')).sort())await db.exec(fs.readFileSync(path.join('supabase/migrations',file),'utf8'));
+ await db.exec(migration);
+ const login=async uid=>db.exec(`reset role;set role authenticated;set request.jwt.claim.sub='${uid}';`);
+ const save=async(title,first,repeat,id=null)=>(await db.query('select public.save_anniversary_v2($1,$2::date,$3,$4,$5,$6::uuid) as id',[title,first,repeat,'❤️',true,id])).rows[0].id;
+ await login(AA);const id=await save('Mesiversario','2026-01-31','monthly');let row=(await db.query('select * from public.anniversaries where id=$1',[id])).rows[0];assert.equal(row.monthly,true);assert.equal(row.annual,false);
+ await login(BB);assert.equal((await db.query('select count(*)::int n from public.anniversaries')).rows[0].n,1);await assert.rejects(save('Modifica partner','2026-01-31','once',id));await assert.rejects(db.query('select public.delete_anniversary($1)',[id]));
+ await login(AA);await save('Data singola','2026-01-31','once',id);row=(await db.query('select * from public.anniversaries where id=$1',[id])).rows[0];assert.equal(row.monthly,false);assert.equal(row.annual,false);
+ await save('Anniversario','2024-02-29','yearly',id);assert.equal((await db.query('select annual from public.anniversaries where id=$1',[id])).rows[0].annual,true);
+ await save('Mesiversario','2026-01-31','monthly',id);await db.query('select public.save_anniversary($1,$2::date,$3,$4,$5,$6::uuid)',['Legacy','2026-01-31',false,'❤️',true,id]);assert.equal((await db.query('select monthly from public.anniversaries where id=$1',[id])).rows[0].monthly,true);
+ await assert.rejects(save('Bad','2026-01-31','weekly'));await assert.rejects(save('','2026-01-31','monthly'));await assert.rejects(save('Bad','1899-01-01','monthly'));await assert.rejects(db.query('select public.process_anniversary_jobs()'));
+ const firsts=['2024-02-29','2026-01-31','2026-04-30','2027-12-31'];let comparisons=0;
+ for(const first of firsts)for(const date of ['2024-02-29','2026-01-31','2026-02-28','2026-03-28','2026-03-31','2026-04-30','2026-05-30','2026-05-31','2027-02-28','2027-12-31','2028-01-31','2028-02-29'])for(const rule of ['yearly','monthly','once']){
+  const a={first_day:first,annual:rule==='yearly',monthly:rule==='monthly'};
+  const expected=isAnniversaryToday(a,date);const actual=(await db.query('select public.anniversary_due($1::date,$2,$3,$4::date) as due',[first,a.annual,a.monthly,date])).rows[0].due;assert.equal(actual,expected,first+' '+date+' '+rule);comparisons++;
+ }
+ await login('cccccccc-cccc-4ccc-8ccc-cccccccccccc');assert.equal((await db.query('select count(*)::int n from public.anniversaries')).rows[0].n,0);await assert.rejects(save('Intruso','2026-01-31','monthly'));
+ await db.exec('reset role;set role anon;');await assert.rejects(save('Anonimo','2026-01-31','monthly'));await db.exec('reset role;truncate public.anniversaries,public.feature_job_runs,public.feature_notifications,public.notification_inbox;');
+ await login(AA);await save('Mensile','2027-01-31','monthly');
+ await db.exec('reset role;');const worker=(await db.query("select pg_get_functiondef('public.process_anniversary_jobs()'::regprocedure) as definition")).rows[0].definition;
+ await db.exec(worker.replaceAll('now()',"timestamptz '2027-02-28 08:59:00+01'"));await db.query('select public.process_anniversary_jobs()');assert.equal((await db.query('select count(*)::int n from public.feature_notifications')).rows[0].n,0);
+ await db.exec(worker.replaceAll('now()',"timestamptz '2027-02-28 09:00:00+01'"));await db.query('select public.process_anniversary_jobs()');await db.query('select public.process_anniversary_jobs()');assert.equal((await db.query('select count(*)::int n from public.feature_notifications')).rows[0].n,2);
+ assert.equal((await db.query('select count(*)::int n from public.feature_job_runs')).rows[0].n,1);
+ console.log('PASS anniversaries: monthly/end-of-month/leap/year rollover, '+comparisons+' JS/SQL date comparisons, manual create/edit, legacy RPC, owner permissions and monthly reminders at 09:00 Rome without duplicates.');
+}finally{await db.close()}})().catch(e=>{console.error(e.message);process.exitCode=1});

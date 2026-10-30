@@ -1,0 +1,50 @@
+// «Preferisci…?»: una domanda al giorno, le risposte si scoprono quando rispondono entrambi.
+// L'indice nella lista è l'ID salvato nel database: aggiungi nuove domande SOLO in fondo.
+export interface WyrQuestion {
+  a: string;
+  b: string;
+}
+
+export const WYR: WyrQuestion[] = [
+  { a: 'Una cena a lume di candela a casa', b: 'Una cena in un ristorante nuovo' },
+  { a: 'Una vacanza al mare', b: 'Una vacanza in montagna' },
+  { a: 'Un weekend improvvisato', b: 'Un viaggio pianificato nei minimi dettagli' },
+  { a: 'Una serata film sul divano', b: 'Una serata fuori con gli amici' },
+  { a: 'Colazione dolce', b: 'Colazione salata' },
+  { a: 'Svegliarmi presto e godermi la mattina', b: 'Dormire fino a tardi' },
+  { a: 'Un regalo costoso comprato', b: 'Un regalo fatto a mano' },
+  { a: 'Un messaggio vocale lungo', b: 'Tanti messaggi brevi durante il giorno' },
+  { a: 'Una videochiamata ogni sera', b: 'Una lunga chiamata nel weekend' },
+  { a: 'Una città d\'arte', b: 'Una natura selvaggia' },
+  { a: 'Viaggiare in treno', b: 'Viaggiare in aereo' },
+  { a: 'Una pizza', b: 'Un piatto di pasta' },
+  { a: 'Una passeggiata sotto la pioggia', b: 'Una giornata di sole in spiaggia' },
+  { a: 'Una sorpresa all\'arrivo', b: 'Sapere tutto in anticipo' },
+  { a: 'Una casa in città', b: 'Una casa in campagna' },
+  { a: 'Cucinare insieme', b: 'Ordinare e rilassarsi' },
+  { a: 'Un animale domestico: cane', b: 'Un animale domestico: gatto' },
+  { a: 'Un concerto dal vivo', b: 'Una serata di giochi da tavolo' },
+  { a: 'Una lettera scritta a mano', b: 'Una playlist fatta apposta per te' },
+  { a: 'Vivere in una città caldissima', b: 'Vivere in una città freddissima' },
+  { a: 'Un giorno intero insieme senza telefono', b: 'Un giorno intero di avventure improvvisate' },
+  { a: 'Il gelato in pieno inverno', b: 'La cioccolata calda in piena estate' },
+  { a: 'Una gita in bici', b: 'Una gita in moto' },
+  { a: 'Tornare indietro nel tempo di 10 anni', b: 'Vedere come sarà tra 10 anni' },
+  { a: 'Una notte in tenda sotto le stelle', b: 'Una notte in un hotel di lusso' },
+  { a: 'Ballare in cucina', b: 'Cantare in macchina' },
+  { a: 'Salutarci con un abbraccio lunghissimo', b: 'Salutarci con tanti piccoli baci' },
+  { a: 'Una serie TV da guardare insieme a puntate', b: 'Un film lungo in una sola sera' },
+  { a: 'Imparare una nuova lingua insieme', b: 'Imparare a suonare uno strumento insieme' },
+  { a: 'Un capodanno in piazza', b: 'Un capodanno in casa, in due' },
+  { a: 'Una foto ricordo a ogni viaggio', b: 'Vivere il momento senza scattare nulla' },
+  { a: 'Il mare di notte', b: 'Il mare all\'alba' },
+  { a: 'Partire domani senza meta', b: 'Partire tra un mese con un piano' },
+  { a: 'Una cena di sushi', b: 'Una cena di hamburger' },
+  { a: 'Sapere sempre cosa pensa l\'altro', b: 'Avere ogni giorno una piccola sorpresa' },
+  { a: 'Un tramonto in cima a una collina', b: 'Un\'alba sul mare' },
+  { a: 'Scrivere un diario insieme', b: 'Creare un album di foto insieme' },
+  { a: 'Un picnic nel parco', b: 'Una colazione a letto' },
+  { a: 'Un massaggio ai piedi', b: 'Un massaggio alle spalle' },
+  { a: 'Il caffè al mattino', b: 'Il tè al pomeriggio' },
+  { a: 'Vincere alla lotteria e viaggiare per un anno', b: 'Comprare la casa dei sogni' },
+];

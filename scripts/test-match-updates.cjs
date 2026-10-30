@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/features/partnergames/matchUpdates.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:m,exports:m.exports});const{mergePartnerMatch}=m.exports;
+const row=(id,revision,date='2026-10-13T10:00:00Z')=>({id,game:'connect4',player_a:'a',player_b:'b',turn:'b',status:'playing',state:{board:'-'.repeat(42)},revision,created_at:date});
+const current=[row('1',5)];for(const candidate of[row('1',4),row('1',5),{...row('1',6),game:'battleship'},{...row('1',6),player_a:'x',player_b:'y'},null,{}])assert.equal(mergePartnerMatch(current,candidate,'connect4','a'),current);
+const newer=mergePartnerMatch(current,row('1',6),'connect4','a');assert.equal(newer[0].revision,6);assert.equal(mergePartnerMatch(newer,row('1',5),'connect4','a'),newer,'Late RPC cannot undo the newer realtime event');
+const next=mergePartnerMatch(newer,row('2',0,'2026-10-13T11:00:00Z'),'connect4','b');assert.equal(next[0].id,'2');assert.equal(next[1].id,'1');
+const older=mergePartnerMatch(next,row('0',20,'2026-10-13T09:00:00Z'),'connect4','a');assert.equal(older[0].id,'2','A late event for an old match cannot replace the current match');
+const history=Array.from({length:20},(_,i)=>row(String(i),1));assert.equal(mergePartnerMatch(history,row('new',0,'2026-10-13T12:00:00Z'),'connect4','a').length,20);
+const micro=mergePartnerMatch([row('1',1,'2026-10-13T10:00:00.123001Z')],row('2',0,'2026-10-13T10:00:00.123002Z'),'connect4','a');assert.equal(micro[0].id,'2','Preserve PostgreSQL microseconds when sorting a new match');
+console.log('PASS match merging: monotonic revisions, delayed RPC/event ordering, owner/game validation, rematch/history ordering and bounded history.');

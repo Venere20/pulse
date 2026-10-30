@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),ts=require('typescript'),assert=require('node:assert/strict');
+let pathname='/game',platform='web';const calls=[];const m={exports:{}};
+const react={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+const mocks={react:{...react,default:react},'expo-router':{Slot:'Slot',usePathname:()=>pathname,router:{push:path=>calls.push(['push',path]),replace:path=>calls.push(['replace',path])}},'react-native':{Platform:{get OS(){return platform}},View:'View'},'../../ui/layout':{TabBar:'TabBar'},'../../state/AppData':{useAppDataFields:()=>({loaded:false,answers:[]})},'../../state/Games':{useGames:()=>({})},'../../features/deeptalk/useDeepTalkSummary':{useDeepTalkSummary:()=>({})},'../../features/badges/Badges':{useBadges:()=>({})}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/(tabs)/_layout.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,{module:m,exports:m.exports,require:name=>mocks[name]});
+const tab=()=>m.exports.default().props.children[1].props;
+assert.equal(tab().active,'pernoi');tab().onChange('pernoi');assert.deepEqual(calls.pop(),['push','/per-noi']);
+pathname='/per-noi';tab().onChange('pernoi');assert.equal(calls.length,0,'Actual active route is a no-op');
+platform='android';pathname='/game';tab().onChange('pernoi');assert.deepEqual(calls.pop(),['replace','/per-noi']);
+pathname='/meetings';tab().onChange('home');assert.deepEqual(calls.pop(),['replace','/']);
+console.log('PASS tab navigation: Games to Per noi, active-route no-op, web history and native replacement');

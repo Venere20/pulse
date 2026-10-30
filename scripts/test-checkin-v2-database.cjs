@@ -1,0 +1,85 @@
+const fs = require('node:fs');
+const Module = require('node:module');
+let bootstrap = fs.readFileSync('scripts/test-feature-database.cjs','utf8').split(' const login=')[0];
+const body = `
+ if(fs.existsSync('.private-backups/checkin-v2-20261027/database-before.json')) {
+ const snapshot=JSON.parse(fs.readFileSync('.private-backups/checkin-v2-20261027/database-before.json','utf8'));
+ await db.exec(snapshot.functions.find(f=>f.name==='process_feature_jobs_core').definition);
+ }
+ await db.exec(fs.readFileSync('supabase/migrations/20261027110348_checkin_v2.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261027213851_checkin_future_departures.sql','utf8'));
+ await db.exec("create function public.game_reminder_ready(uuid) returns boolean language sql as 'select true'");
+ const beforeFix=JSON.parse(fs.readFileSync('.private-backups/checkin-four-fixes-20261027/database-before.json','utf8'));
+ for(const name of ['claim_feature_notifications','dispatch_feature_worker'])await db.exec(beforeFix.find(f=>f.proname===name).definition);
+ await db.exec(fs.readFileSync('supabase/migrations/20261027220121_checkin_notification_validity.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261027220504_checkin_grace_preferences.sql','utf8'));
+ const login=async(who,role='authenticated')=>{await db.exec(\`reset role;set role \${role};set request.jwt.claim.sub='\${who}';\`);};
+ const scalar=async(sql)=>(await db.query(sql)).rows[0];
+ const reject=async(sql)=>{await assert.rejects(db.query(sql));};
+ await login(AA);
+ const route={name:'Casa',icon:'🏠',origin:'Ufficio',destination:'Casa',minutes:45,grace_minutes:10,note:'Solito percorso',quick_start:true,favorite:true,position:2};
+ const rid=(await db.query('select public.save_checkin_route($1::jsonb) as id',[JSON.stringify(route)])).rows[0].id;
+ assert.equal((await scalar('select count(*)::int n from public.checkin_routes')).n,1);
+ await login(BB);assert.equal((await scalar('select count(*)::int n from public.checkin_routes')).n,0);
+ await reject(\`select public.delete_checkin_route('\${rid}')\`);
+ await assert.rejects(db.query('select public.save_checkin_route($1::jsonb,$2::uuid)',[JSON.stringify(route),rid]));
+ await login(AA);
+ await assert.rejects(db.query('select public.save_checkin_route($1::jsonb)',[JSON.stringify({...route,minutes:0})]));
+ await reject(\`select public.start_checkin_v2('Casa','',45,now(),10)\`); // unreachable warning still enforced
+ const cid=(await scalar(\`select public.start_checkin_v2('Casa','Viaggio singolo',45,now()-interval'5 minutes',15,'Stazione',true) id\`)).id;
+ const c=await scalar(\`select * from public.safe_checkins where id='\${cid}'\`);
+ assert.equal(c.flow_version,2);assert.equal(c.grace_minutes,15);
+ assert.equal(Math.round((Date.parse(c.due_at)-Date.parse(c.departed_at))/60000),45);
+ assert.equal((await scalar(\`select minutes from public.checkin_routes where id='\${rid}'\`)).minutes,45);
+ await reject(\`select public.start_checkin_v2('Altro','',30,now(),10,'',true)\`);
+ await login(BB);await reject(\`select public.update_checkin_v2('\${cid}','arrived')\`);
+ await reject(\`select public.update_checkin_v2('\${cid}','extend',15)\`);
+ await reject('select public.process_checkin_jobs_v2()');
+ // Repeated scheduler ticks: one prompt, then one alert to each person.
+ await db.exec(\`reset role;delete from public.feature_notifications;update public.safe_checkins set due_at=now()-interval'1 minute'where id='\${cid}';\`);
+ await db.query('select public.process_checkin_jobs_v2()');await db.query('select public.process_checkin_jobs_v2()');
+ assert.equal((await scalar('select count(*)::int n from public.feature_notifications')).n,1);
+ assert.equal((await scalar('select user_id from public.feature_notifications')).user_id,A);
+ await db.exec(\`update public.safe_checkins set due_at=now()-interval'16 minutes'where id='\${cid}'\`);
+ await db.query('select public.process_checkin_jobs_v2()');await db.query('select public.process_checkin_jobs_v2()');
+ assert.equal((await scalar('select count(*)::int n from public.feature_notifications')).n,3);
+ assert.equal((await scalar(\`select count(distinct user_id)::int n from public.feature_notifications where tag='checkin-alert'\`)).n,2);
+ assert.equal((await scalar(\`select status from public.safe_checkins where id='\${cid}'\`)).status,'alerted');
+ await login(AA);await db.query(\`select public.update_checkin_v2('\${cid}','extend',15)\`);
+ const extended=await scalar(\`select status,due_at,prompted_at from public.safe_checkins where id='\${cid}'\`);
+ assert.equal(extended.status,'active');assert.equal(extended.prompted_at,null);assert.ok(Date.parse(extended.due_at)>Date.now()+14*60000);
+ await db.query(\`select public.update_checkin_v2('\${cid}','arrived')\`);
+ await reject(\`select public.update_checkin_v2('\${cid}','extend',15)\`);
+ const cid2=(await scalar(\`select public.start_checkin_v2('Casa','',30,now(),10,'',true) id\`)).id;
+ await db.exec(\`reset role;update public.safe_checkins set due_at=now()-interval'31 minutes'where id='\${cid2}'\`);
+ await db.query('select public.process_checkin_jobs_v2()');
+ await login(AA);await db.query(\`select public.update_checkin_v2('\${cid2}','cancel')\`);
+ assert.equal((await scalar(\`select status from public.safe_checkins where id='\${cid2}'\`)).status,'cancelled');
+ await reject(\`select public.start_checkin_v2('Casa','',30,now()-interval'1 hour',10,'',true)\`);
+ await reject(\`select public.start_checkin_v2('Casa','',30,now()+interval'25 hours',10,'',true)\`);
+ await reject(\`select public.start_checkin_v2('Casa','',30,now(),31,'',true)\`);
+ await db.query(\`select public.delete_checkin_route('\${rid}')\`);
+ await login('', 'anon'); await reject('select * from public.checkin_routes');
+ // Ensure the migration only replaced the check-in block of the core worker.
+ await db.exec('reset role');
+ const def=(await scalar(\`select pg_get_functiondef('public.process_feature_jobs_core()'::regprocedure) d\`)).d;
+ assert.ok(def.includes('process_checkin_jobs_v2'));assert.ok(def.includes('for proposal'));assert.ok(def.includes('for capsule'));
+ await login(AA); const legacy=(await scalar(\`select public.start_checkin('Web precedente','',30,true) id\`)).id;
+ await db.query(\`select public.update_checkin('\${legacy}','arrived')\`);
+ assert.equal((await scalar(\`select status from public.safe_checkins where id='\${legacy}'\`)).status,'arrived');
+ await db.exec('reset role;delete from public.feature_notifications');await login(AA);
+ const scheduled=(await scalar(\`select public.start_checkin_v2('Partenza futura','',85,now()+interval'17 minutes',10,'',true) id\`)).id;
+ const planned=await scalar(\`select * from public.safe_checkins where id='\${scheduled}'\`);
+ assert.equal(Math.round((Date.parse(planned.due_at)-Date.parse(planned.departed_at))/60000),85);
+ await db.exec('reset role');await db.query('select public.process_checkin_jobs_v2()');
+ assert.equal((await scalar(\`select prompted_at from public.safe_checkins where id='\${scheduled}'\`)).prompted_at,null);
+ assert.equal((await scalar(\`select count(*)::int n from public.feature_notifications where tag='checkin-alert'\`)).n,0);
+ await db.exec(\`update public.safe_checkins set due_at=now()-interval'1 minute'where id='\${scheduled}'\`);
+ await db.query('select public.process_checkin_jobs_v2()');
+ assert.ok((await scalar(\`select prompted_at from public.safe_checkins where id='\${scheduled}'\`)).prompted_at);
+ await db.close(); console.log('Check-in V2: routes, RLS, timestamps, notifications, idempotency and transitions OK');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});
+`;
+const mod = new Module(__filename, module); mod.filename=__filename;mod.paths=module.paths;
+mod._compile(bootstrap + body,__filename);

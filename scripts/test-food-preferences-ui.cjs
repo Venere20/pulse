@@ -1,0 +1,26 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const states=new Map();let current,cursor,pending,failed=false;const writes=[],messages=[];
+const rows=[{id:'me',likes:'Pasta',exceptions:'Pomodoro solo cotto'},{id:'partner',likes:'Sushi'}];
+const data={rows,hasSnapshot:true,error:null,refresh:async()=>{},updateRows:fn=>{data.rows=fn(data.rows)}};
+const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:init=>{const owner=current,index=cursor++;if(!states.has(owner))states.set(owner,[]);const state=states.get(owner);if(!(index in state))state[index]=typeof init==='function'?init():init;return[state[index],value=>{state[index]=typeof value==='function'?value(state[index]):value}];}};
+const db={from:()=>({upsert:payload=>{writes.push(payload);return{select:()=>({single:async()=>({data:payload,error:failed?{message:'Rete non disponibile'}:null})})}}})};
+const mocks={react:{...react,default:react},'react-native':{View:'View'},'../../config/supabase':{supabase:db},'../../state/AppData':{useAppDataFields:()=>({userId:'me',partnerId:'partner',names:{partner:'Giulia'}})},'../../services/saveState':{trackResult:fn=>fn()},'../../ui/primitives':Object.fromEntries(['Button','Card','Chip','Input','SectionTitle','T'].map(k=>[k,k])),'../../ui/Toast':{useToast:()=>({success:message=>messages.push(message)})},'../useFeatureRows':{useFeatureRows:()=>data},'../FeatureFrame':{useFeatureAction:()=>({busy:false,run:fn=>{pending=fn().catch(e=>messages.push(e.message));return pending;}})}};
+const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/features/food/FoodPreferencesSection.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,{module:m,exports:m.exports,require:name=>mocks[name]});
+const render=fn=>{current=fn;cursor=0;return fn();};
+const nodes=root=>{if(!root||typeof root!=='object')return[];if(Array.isArray(root))return root.flatMap(nodes);return[root,...nodes(root.props?.children)];};
+const button=(root,label)=>nodes(root).find(n=>n.type==='Button'&&n.props.label===label);
+const chip=(root,label)=>nodes(root).find(n=>n.type==='Chip'&&n.props.label===label);
+(async()=>{
+ const Section=m.exports.FoodPreferencesSection;let tree=render(Section);assert.ok(button(tree,'Apri preferenze alimentari'));
+ button(tree,'Apri preferenze alimentari').props.onPress();tree=render(Section);const Details=nodes(tree).find(n=>typeof n.type==='function').type;
+ tree=render(Details);assert.equal(nodes(tree).filter(n=>n.type==='Input').length,0);button(tree,'Modifica le mie preferenze').props.onPress();tree=render(Details);
+ let inputs=nodes(tree).filter(n=>n.type==='Input');assert.equal(inputs.length,6);assert.equal(inputs[5].props.label,'Eccezioni');assert.ok(inputs.every(n=>n.props.maxLength===1000));
+ inputs[5].props.onChangeText('  Non crudo, sì al sugo  ');chip(tree,'Del partner').props.onPress();tree=render(Details);
+ assert.equal(nodes(tree).filter(n=>n.type==='Input').length,0);assert.ok(!button(tree,'Modifica le mie preferenze'));assert.ok(!button(tree,'Salva preferenze alimentari'));
+ chip(tree,'Le mie').props.onPress();tree=render(Details);assert.equal(nodes(tree).filter(n=>n.type==='Input')[5].props.value,'  Non crudo, sì al sugo  ');
+ failed=true;button(tree,'Salva preferenze alimentari').props.onPress();await pending;tree=render(Details);assert.equal(nodes(tree).filter(n=>n.type==='Input').length,6,'Failed save retains edits');
+ failed=false;button(tree,'Salva preferenze alimentari').props.onPress();await pending;tree=render(Details);
+ assert.equal(writes.at(-1).id,'me');assert.equal(writes.at(-1).exceptions,'Non crudo, sì al sugo');assert.equal(nodes(tree).filter(n=>n.type==='Input').length,0);assert.ok(messages.includes('Preferenze alimentari salvate'));
+ data.error='Offline';tree=render(Details);assert.ok(button(tree,'Riprova'));assert.ok(!button(tree,'Modifica le mie preferenze'));
+ console.log('PASS food UI: six fields, partner read-only, own draft retained across profile tabs, failed save retained, trimmed owner-only payload and read-error retry.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

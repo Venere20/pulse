@@ -1,0 +1,13 @@
+const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/services/signedUrlCache.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:m,exports:m.exports});
+(async()=>{let time=1000;const pending=[];const cache=m.exports.createSignedUrlCache((bucket,path,seconds)=>new Promise((resolve,reject)=>pending.push({bucket,path,seconds,resolve,reject})),()=>time);
+const first=cache.get('a','visit-covers','v/a.jpg'),second=cache.get('a','visit-covers','v/a.jpg');assert.equal(pending.length,1);assert.equal(pending[0].seconds,3600);pending[0].resolve('url-a');assert.equal((await first).url,'url-a');assert.equal((await second).url,'url-a');await cache.get('a','visit-covers','v/a.jpg');assert.equal(pending.length,1);
+time+=3479000;await cache.get('a','visit-covers','v/a.jpg');assert.equal(pending.length,1);time+=1001;const renewed=cache.get('a','visit-covers','v/a.jpg');assert.equal(pending.length,2);pending[1].resolve('url-renewed');assert.equal((await renewed).url,'url-renewed');
+const other=cache.get('b','visit-covers','v/a.jpg');assert.equal(pending.length,3);pending[2].resolve('url-b');assert.equal((await other).url,'url-b');const bucket=cache.get('a','capsules','v/a.jpg');pending[3].resolve('capsule-url');await bucket;
+cache.invalidate('a','visit-covers','v/a.jpg');const invalid=cache.get('a','visit-covers','v/a.jpg');pending[4].resolve('fresh-url');await invalid;
+const failed=cache.get('a','capsules','bad');pending[5].reject(new Error('offline'));await assert.rejects(failed);const retry=cache.get('a','capsules','bad');pending[6].resolve('retry-url');assert.equal((await retry).url,'retry-url');
+const stale=cache.get('a','capsules','pending');cache.clear();pending[7].resolve('old-session');await assert.rejects(stale,/superata/);const next=cache.get('a','capsules','pending');pending[8].resolve('new-session');assert.equal((await next).url,'new-session');
+const deleting=cache.get('a','capsules','deleted');cache.invalidate('a','capsules','deleted');pending[9].resolve('deleted-url');await assert.rejects(deleting,/superata/);
+let count=0;const bounded=m.exports.createSignedUrlCache(async()=>String(++count),()=>time,2);await bounded.get('a','c','1');await bounded.get('a','c','2');await bounded.get('a','c','3');await bounded.get('a','c','1');assert.equal(count,4);
+console.log('PASS signed URLs: deduplicated concurrent reads, reuse until renewal margin, expiry renewal, account/bucket isolation, invalidation, error retry, clear rejects old-session results, bounded memory.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

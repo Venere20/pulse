@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+.feature-build/
+dist/
+.env*
+!.env.example
+google-services.json
+*.jks
+*.p12
+*.key
+android/
+ios/
+supabase/.temp/

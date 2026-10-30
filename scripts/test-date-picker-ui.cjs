@@ -1,0 +1,30 @@
+const fs=require('node:fs'),assert=require('node:assert/strict'),pickDate=require('./browser-date-picker.cjs');
+const{chromium}=require('C:/Users/39345/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const base='http://127.0.0.1:'+(process.argv[2]||4194);
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Users/39345/AppData/Local/ms-playwright/chromium-1194/chrome-win/chrome.exe'});try{
+ for(const width of process.env.PULSE_QA_WIDTHS ? process.env.PULSE_QA_WIDTHS.split(',').map(Number) : [320,390,1280]){
+  const c=await browser.newContext({viewport:{width,height:950}});await c.route('**/*',r=>r.request().url().startsWith(base+'/')?r.continue():r.abort());
+  await c.addInitScript(()=>{localStorage.setItem('pulse-local-demo-login-v1','yes');document.addEventListener('DOMContentLoaded',()=>{
+   const original=window.fetch;window.pickerWrites=[];
+   window.fetch=async(input,options={})=>{const u=new URL(typeof input==='string'?input:input.url,location.href),rpc=u.pathname.split('/').pop();
+    if(u.pathname==='/rest/v1/remote_dates')return new Response(JSON.stringify([{id:'00000000-0000-4000-8000-000000000098',author_id:'00000000-0000-4000-8000-000000000002',recipient_id:'00000000-0000-4000-8000-000000000001',response_by:'00000000-0000-4000-8000-000000000001',title:'Proposta partner',kind:'call',note:'',starts_at:'2027-01-01T20:00:00Z',duration_minutes:30,status:'proposed'}]),{headers:{'content-type':'application/json'}});
+    if(u.pathname.startsWith('/rest/v1/rpc/')&&['save_anniversary_v2','save_story_moment_v2','call_log_action','create_partner_reminder','create_remote_date','remote_date_action','create_capsule_draft','seal_capsule'].includes(rpc)){
+     const body=JSON.parse(options.body||'{}');window.pickerWrites.push({rpc,body});return new Response(JSON.stringify('00000000-0000-4000-8000-000000000099'),{headers:{'content-type':'application/json'}});
+    }return original(input,options);
+   };
+  })});
+  const page=await c.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
+  const written=async rpc=>{await page.waitForFunction(rpc=>window.pickerWrites.some(x=>x.rpc===rpc),rpc);return page.evaluate(rpc=>window.pickerWrites.filter(x=>x.rpc===rpc).at(-1).body,rpc)};
+  await page.goto(base+'/ricorrenze');await page.getByRole('button',{name:'Mesiversario',exact:true}).click();await pickDate(page,'Data di inizio','2024-02-29');await page.getByRole('button',{name:'Salva ricorrenza',exact:true}).click();assert.equal((await written('save_anniversary_v2')).p_first,'2024-02-29');
+  await page.goto(base+'/storia');await page.getByRole('button',{name:'Aggiungi un momento',exact:true}).click();await page.getByLabel('Titolo del momento',{exact:true}).fill('Data dal calendario');await pickDate(page,'Data del momento','2024-02-29');
+  await page.getByRole('button',{name:'Data del momento',exact:true}).click();await page.getByRole('button',{name:'Vai a oggi',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Mese successivo',exact:true}).isDisabled(),true);await page.getByRole('button',{name:'Annulla',exact:true}).click();await page.getByRole('button',{name:'Conserva il momento',exact:true}).click();assert.equal((await written('save_story_moment_v2')).p_day,'2024-02-29');
+  await page.goto(base+'/statistiche');await pickDate(page,'Giorno della chiamata','2024-02-28');await page.getByRole('button',{name:'Registra chiamata',exact:true}).click();assert.equal((await written('call_log_action')).p_day,'2024-02-28');
+  await page.goto(base+'/promemoria');await page.getByLabel('Di cosa vorresti parlare?',{exact:true}).fill('Prova calendario');await pickDate(page,'Data','2027-02-28');await page.getByLabel('Ora (HH:MM)',{exact:true}).fill('21:35');await page.getByRole('button',{name:'Crea promemoria per il partner',exact:true}).click();assert.equal((await written('create_partner_reminder')).p_due,'2027-02-28T20:35:00.000Z');
+  await page.goto(base+'/appuntamenti');await page.getByLabel('Il nostro appuntamento',{exact:true}).fill('Serata insieme');await pickDate(page,'Data','2027-02-28');await page.getByLabel('Ora (HH:MM)',{exact:true}).fill('20:30');await page.getByRole('button',{name:'Invita il partner',exact:true}).click();assert.equal((await written('create_remote_date')).p_start,'2027-02-28T19:30:00.000Z');
+  await page.getByRole('button',{name:'Proponi un altro orario',exact:true}).click();await pickDate(page,'Data','2027-03-01',1);await page.getByLabel('Ora (HH:MM)',{exact:true}).last().fill('19:45');await page.getByRole('button',{name:'Invia il nuovo orario',exact:true}).click();assert.equal((await written('remote_date_action')).p_start,'2027-03-01T18:45:00.000Z');
+  await page.goto(base+'/capsule');await page.getByRole('button',{name:'Scrivi una capsula',exact:true}).click();await page.getByLabel('Il tuo messaggio',{exact:true}).fill('Una sorpresa');await page.getByRole('button',{name:'Scegli l’apertura',exact:true}).click();await pickDate(page,'Data','2027-02-28');await page.getByLabel('Ora (HH:MM)',{exact:true}).fill('09:15');
+  if(width===390){await page.getByRole('button',{name:'Data',exact:true}).click();await page.getByRole('heading',{name:'Scegli data',exact:true}).waitFor();await page.screenshot({path:'.feature-build/date-picker-390.png',fullPage:true,animations:'disabled'});await page.getByRole('button',{name:'Annulla',exact:true}).click();}
+  await page.getByRole('button',{name:'Rivedi',exact:true}).click();await page.getByRole('button',{name:'Sigilla capsula',exact:true}).click();const capsule=await written('seal_capsule');assert.equal(capsule.p_unlock_at,'2027-02-28T08:15:00.000Z');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);console.log(`PASS date fields ${width}px: anniversaries, story, calls, reminders, appointments, capsules, calendar confirmation/cancel and preserved times`);await c.close();
+ }
+}finally{await browser.close()}})().catch(e=>{console.error(e.message);process.exitCode=1});
