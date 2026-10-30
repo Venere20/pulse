@@ -34,7 +34,7 @@ async function run(engine,width,base){
       if(rpc==='update_visit_actual_times')return json(null);
       if(rpc==='packing_item_action'){const item=items.find(i=>i.id===body.p_item);if(item&&body.p_action==='check')item.checked=body.p_data.checked;return json(null);}
      }
-     if(u.pathname==='/functions/v1/journey-midpoint'){window.__journeyCalls.push({rpc:'midpoint'});return json({candidates:[{id:'central',name:'Napoli Centrale',lat:40.85,lon:14.27,mine:{meters:70000,minutes:80},partner:{meters:40000,minutes:55},source:'api'}]});}
+     if(u.pathname==='/functions/v1/journey-midpoint-motis'){window.__journeyCalls.push({rpc:'midpoint'});return json({candidates:[{id:'central',name:'Napoli Centrale',lat:40.85,lon:14.27,mine:{meters:70000,minutes:80},partner:{meters:40000,minutes:55},source:'api'}]});}
      return original(input,options);
     };
    });
@@ -64,3 +64,4 @@ async function run(engine,width,base){
  }finally{await browser.close();}
 }
 (async()=>{const server=await serve();try{for(const[e,w]of [['chromium',320],['webkit',390],['chromium',1280]])await run(e,w,'http://127.0.0.1:'+server.address().port);}finally{await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1});
+

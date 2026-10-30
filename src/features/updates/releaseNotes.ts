@@ -19,6 +19,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Copertine degli incontri: ritaglio, spostamento, rotazione e scelta fra riquadro fisso e adattivo.',
       'Disegna e indovina: 200 parole nuove, per un totale di 220.',
       'Percorsi: chilometri personali e insieme separati; ogni tratto condiviso conta una sola volta, con andata e ritorno distinti. Puoi correggere anche i vecchi incontri.',
+      'Pianificatore: aggiungi e riordina le tappe, cerca stazioni e locali, scegli cammino, metro o treno e indica le soste. Per Ischia puoi includere il riferimento personale di 33 km di aliscafo per direzione.',
       'Ogni partner può scegliere i propri mezzi, inclusi Cammino e Metro. Nuovi obiettivi per 500, 2.000 e 10.000 km percorsi insieme.',
       'Punto di incontro: confronto fra tempi o distanze simili, con chilometri e minuti di entrambi.',
       'Streak: almeno un Pulse ciascuno completa la giornata. Un giorno saltato congela il conteggio, due consecutivi lo azzerano. La data è quella italiana del server. Traguardi a 3, 7 e 30 giornate.',
