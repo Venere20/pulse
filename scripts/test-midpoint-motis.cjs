@@ -16,5 +16,7 @@ function service(options={}){
  s=service();let r=await s.send(),d=await r.json();assert.equal(r.status,200);assert.equal(d.candidates.length,3);assert.equal(d.candidates[0].mine.meters,33000);assert.equal(d.candidates[1].mine.meters,45000);assert.ok(s.calls.filter(c=>c.preset==='shared').length<=6);assert.ok(s.calls.some(c=>c.mode==='metro'));assert.ok(s.calls.some(c=>c.mode==='train'));
  s=service({uncertain:true});d=await(await s.send()).json();assert.equal(d.candidates.length,0,'No uncertain geometry is silently accepted');
  s=service({context:{me:id,mine:{city:'Roma',modes:['Auto']},partner:{city:'Napoli',modes:['Treno']}}});d=await(await s.send()).json();assert.equal(d.candidates.length,0);
- console.log('PASS MOTIS midpoint: auth/member/input validation, three bounded candidates, same quota-backed planner, exact sea reference, mode preferences, uncertain/unsupported routes omitted. No external calls.');
+ s=service({context:{me:id,mine:{city:'Ischia',modes:['Aliscafo','Metro','Treno']},partner:{city:'San Marcellino',modes:['Treno']}}});d=await(await s.send()).json();assert.equal(d.candidates.length,3);
+ assert.ok(s.calls.filter(c=>c.preset==='shared').every(c=>c.mode==='train'),'Metro + Treno must use the RAIL family, never metro-only');
+ console.log('PASS MOTIS midpoint: auth/member/input validation, three bounded candidates, same quota-backed planner, exact sea reference, Metro+Treno full rail family, uncertain/unsupported routes omitted. No external calls.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

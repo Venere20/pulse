@@ -31,7 +31,9 @@ Deno.serve(async req=>{
    const sea=island(person),extra=sea?33000:0;const departure=Date.now()+(sea?45*60000:0);
    if(Math.abs(from.lat-to.lat)<.00001&&Math.abs(from.lon-to.lon)<.00001)return{meters:extra,minutes:sea?45:0};
    const p=Object.fromEntries(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Rome',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(departure).map(v=>[v.type,v.value]));
-   const mode=person.modes.includes('Metro')?'metro':person.modes.includes('Treno')?'train':'walk';
+   // MOTIS RAIL includes regional/long-distance rail, SUBURBAN and SUBWAY.
+   // Prefer it when both are selected; metro-only would exclude mainline rail.
+   const mode=person.modes.includes('Treno')?'train':person.modes.includes('Metro')?'metro':'walk';
    const data=await api({preset:'shared',from,to,direction:'out',mode,day:`${p.year}-${p.month}-${p.day}`,hour:`${p.hour}:${p.minute}`});
    const option=data.options.find((o:{complete:boolean;uncertain:boolean})=>o.complete&&!o.uncertain);if(!option)throw Error('Distanza mancante');
    return{meters:option.meters+extra,minutes:Math.ceil(option.seconds/60)+(sea?45:0)};

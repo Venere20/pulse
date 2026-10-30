@@ -1,4 +1,4 @@
-import { trackResult } from '../services/saveState';
+import { trackResult, uncertainWrite } from '../services/saveState';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -75,9 +75,16 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
   const [saving, setSaving] = useState(false);
   const mounted = useRef(false);
   const selecting = useRef(false);
+  const saveLock = useRef(false);
+  const baseline = useRef({ note: visit.memory_notes || '', photos: saved, settings: visit.memory_photo_settings ?? {} });
+  const uploaded = useRef<string[]>([]);
+  const uncertainSave = useRef(false);
   useEffect(() => { const life = mounted; life.current = true; return () => { life.current = false; }; }, []);
 
   const start = () => {
+    baseline.current = { note: visit.memory_notes || '', photos: [...saved], settings: visit.memory_photo_settings ?? {} };
+    uploaded.current = [];
+    uncertainSave.current = false;
     setNote(visit.memory_notes || '');
     setPhotos(saved);
     setLayouts(visit.memory_photo_settings ?? {});
@@ -85,8 +92,26 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
   };
 
   const cancel = async () => {
-    await Promise.all(photos.filter((p) => !saved.includes(p)).map((p) => removeMeetingPhoto(p).catch(() => {})));
+    if (saveLock.current || selecting.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    try {
+    // A lost RPC response may hide a committed save. Check before discarding
+    // session uploads, otherwise Cancel could delete photos already in the DB.
+    if (uploaded.current.length && !uncertainSave.current) {
+        const { data, error } = await supabase.from('visits').select('memory_photos').eq('id', visit.id).single();
+        if (error || !data) throw new Error('Non è possibile verificare le foto salvate. Riprova quando la connessione è disponibile.');
+        await Promise.all(uploaded.current.filter(p => !data.memory_photos?.includes(p)).map((p) => removeMeetingPhoto(p).catch(() => {})));
+    }
+    uploaded.current = [];
+    setPhotoQueue([]);
     setEditing(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Impossibile verificare le foto salvate.');
+    } finally {
+      saveLock.current = false;
+      if (mounted.current) setSaving(false);
+    }
   };
 
   const pick = async () => {
@@ -104,6 +129,7 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
         if (!mounted.current) throw new Error('Caricamento annullato');
       }
       setPhotos((prev) => [...prev, ...urls].slice(0, MAX_MEMORY_PHOTOS));
+      uploaded.current.push(...urls);
       setPhotoQueue(urls);
     } catch (e: any) {
       // A later file may fail after earlier pairs were uploaded. None of those
@@ -117,18 +143,30 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
   };
 
   const save = async () => {
+    if (saveLock.current || selecting.current) return;
+    saveLock.current = true;
     setSaving(true);
+    try {
     const settings = Object.fromEntries(Object.entries(layouts).filter(([uri]) => photos.includes(uri)));
-    const { error } = await trackResult(() => supabase.from('visits').update({ memory_notes: note.trim() || null, memory_photos: photos, memory_photo_settings: settings }).eq('id', visit.id));
+    const { error } = await trackResult(() => supabase.rpc('save_visit_memory', { p_visit: visit.id, p_expected: baseline.current, p_note: note, p_photos: photos, p_settings: settings }));
     if (error) {
-      setSaving(false);
+      // A request may still commit after a timeout. Even an immediate SELECT
+      // cannot prove it will not commit later; quarantine these files instead.
+      uncertainSave.current ||= uncertainWrite(error) || !/^[0-9A-Z]{5}$/.test(error.code ?? '');
       return toast.error("Impossibile salvare il ricordo: " + error.message);
     }
-    await Promise.all(saved.filter((p) => !photos.includes(p)).map((p) => removeMeetingPhoto(p).catch(() => {})));
-    setSaving(false);
+    await Promise.all([...new Set([...baseline.current.photos, ...uploaded.current])].filter((p) => !photos.includes(p)).map((p) => removeMeetingPhoto(p).catch(() => {})));
+    uploaded.current = [];
     setEditing(false);
     toast.success('Ricordo salvato');
     onChanged();
+    } catch (e: any) {
+      uncertainSave.current = true;
+      toast.error('Impossibile salvare il ricordo: ' + (e?.message || e));
+    } finally {
+      saveLock.current = false;
+      if (mounted.current) setSaving(false);
+    }
   };
 
   const shown = editing ? photos : saved;
@@ -177,6 +215,7 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
                     <TouchableOpacity
                       accessibilityRole="button"
                       accessibilityLabel="Rimuovi foto"
+                      disabled={uploading || saving}
                       onPress={() => setPhotos(photos.filter((p) => p !== url))}
                       style={{ position: 'absolute', top: 10, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
                     >
@@ -193,18 +232,18 @@ export const MemoryEditor: React.FC<{ visit: Visit; doneWishes: string[]; onChan
           {editing ? (
             <Card>
               <View style={{ gap: s.md }}>
-                <Input label="Un pensiero su questo incontro" placeholder="Cosa vi porterete dietro..." multiline value={note} onChangeText={setNote} style={{ minHeight: 100, textAlignVertical: 'top' }} />
+                <Input label="Un pensiero su questo incontro" placeholder="Cosa vi porterete dietro..." multiline editable={!saving} value={note} onChangeText={setNote} style={{ minHeight: 100, textAlignVertical: 'top' }} />
                 <Button
                   label={`Aggiungi foto (${photos.length}/${MAX_MEMORY_PHOTOS})`}
                   icon="camera"
                   variant="secondary"
                   onPress={pick}
                   loading={uploading}
-                  disabled={photos.length >= MAX_MEMORY_PHOTOS}
+                  disabled={saving || photos.length >= MAX_MEMORY_PHOTOS}
                 />
                 <View style={{ flexDirection: 'row', gap: s.sm }}>
                   <Button label="Salva ricordo" onPress={save} loading={saving} disabled={uploading} style={{ flex: 2 }} />
-                  <Button label="Annulla" variant="secondary" onPress={cancel} disabled={uploading} style={{ flex: 1 }} />
+                  <Button label="Annulla" variant="secondary" onPress={cancel} disabled={uploading || saving} style={{ flex: 1 }} />
                 </View>
               </View>
             </Card>

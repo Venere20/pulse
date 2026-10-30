@@ -1,0 +1,11 @@
+const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
+let path='/meetings',ready=true,cleanup,listener,queue=[],calls=[],handlers={},id=0;const location={origin:'https://fixture.invalid',pathname:'/meetings',search:'',hash:''};
+const moduleMock={exports:{}};const mocks={react:{useRef:value=>({current:value}),useLayoutEffect:fn=>cleanup=fn()},'expo-router':{router:{replace:value=>calls.push(value)},usePathname:()=>path,useNavigationContainerRef:()=>({isReady:()=>ready,addListener:(_,fn)=>{listener=fn;return()=>listener=null;}})}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/navigation/WebHistoryRecovery.web.tsx','utf8'),{compilerOptions:{module:1,target:9}}).outputText,{module:moduleMock,exports:moduleMock.exports,require:n=>mocks[n],location,URL,window:{addEventListener:(type,fn)=>handlers[type]=fn,removeEventListener:type=>delete handlers[type]},requestAnimationFrame:fn=>{queue.push({id:++id,fn});return id;},cancelAnimationFrame:id=>queue=queue.filter(v=>v.id!==id)});
+const flush=()=>{while(queue.length)queue.shift().fn();};moduleMock.exports.WebHistoryRecovery();
+handlers.popstate();flush();assert.deepEqual(calls,[],'Ordinary browser state is untouched');
+location.pathname='/';handlers.popstate();location.pathname='/meetings';flush();assert.deepEqual(calls,['/'],'Startup overwrite is recovered');calls=[];
+ready=false;location.pathname='/';handlers.popstate();flush();assert.equal(calls.length,0);ready=true;listener();flush();assert.deepEqual(calls,['/'],'Recovery waits for router readiness');calls=[];
+handlers.popstate();handlers.pointerdown();flush();assert.equal(calls.length,0,'New deliberate input wins over recovery');
+location.pathname='//external.invalid';handlers.popstate();flush();assert.equal(calls.length,0,'Recovery cannot navigate to another origin');
+cleanup();assert.equal(Object.keys(handlers).length,0);assert.equal(listener,null);console.log('PASS web history recovery: normal no-op, startup race, readiness, input cancellation, same-origin restriction and cleanup.');

@@ -18,10 +18,11 @@ import { ScreenActivity } from '../hooks/useActivity';
 import { AppUpdateNotice } from '../features/updates/AppUpdateNotice';
 import { CategoryNotificationsProvider } from '../features/inbox/CategoryNotifications';
 import { ReleaseNotesNotice } from '../features/updates/ReleaseNotesNotice';
+import { WebHistoryRecovery } from '../navigation/WebHistoryRecovery';
 const screenLayout = ({ children }: { children: React.ReactNode }) => <ScreenActivity>{children}</ScreenActivity>;
 export default function RootLayout() {
     return <SafeAreaRoot><ThemeProvider><ToastProvider><AuthProvider><AuthGate><AppDataProvider>
- <SaveOwnerSync /><DraftLifecycle /><NotificationBridge /><CheckinReminderSync />
+ <WebHistoryRecovery /><SaveOwnerSync /><DraftLifecycle /><NotificationBridge /><CheckinReminderSync />
  <GamesProvider><BadgesProvider><CategoryNotificationsProvider><DataLoadBanner /><ConfirmationHost /><Stack screenLayout={screenLayout} screenOptions={{ headerShown: false }}/><AppUpdateNotice /><ReleaseNotesNotice /></CategoryNotificationsProvider></BadgesProvider></GamesProvider>
  </AppDataProvider></AuthGate></AuthProvider></ToastProvider></ThemeProvider></SafeAreaRoot>;
 }

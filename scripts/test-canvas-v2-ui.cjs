@@ -22,6 +22,7 @@ async function run(browser,base,engine,width,height){
      const b=window.__board;if(body.p_epoch===b.epoch){
       if(body.p_action==='clear'){b.epoch++;b.strokes=[];b.deleted_ids=[];}
       if(body.p_action==='undo'){b.strokes=b.strokes.filter(s=>s.id!==body.p_id);b.deleted_ids.push(body.p_id);}
+       if(body.p_action==='erase'){const stroke=b.strokes.find(s=>s.id===body.p_id);if(stroke)stroke.erasures=(stroke.erasures||[]).concat(body.p_stroke.erasures);}
       if(body.p_action==='put'&&!b.deleted_ids.includes(body.p_stroke.id)){window.__putCalls++;b.strokes=b.strokes.filter(s=>s.id!==body.p_stroke.id).concat(body.p_stroke);}
       b.revision++;localStorage.setItem('test-v2-board',JSON.stringify(b));
      }return json(b);
@@ -46,7 +47,8 @@ async function run(browser,base,engine,width,height){
  await page.getByRole('button',{name:'Pennello',exact:true}).click();for(const label of ['Mano libera','Gomma','Linea','Rettangolo','Cerchio','Inchiostro','Neon'])await page.getByRole('button',{name:label,exact:true}).waitFor();await page.getByRole('button',{name:'Neon',exact:true}).click();await page.getByRole('button',{name:'Fatto',exact:true}).click();
  await page.getByRole('button',{name:'Tratto',exact:true}).click();await page.getByRole('button',{name:'Grande',exact:true}).click();
  await tool('Rettangolo');const before=await page.evaluate(()=>window.__putCalls);const b=await canvas.boundingBox();await page.mouse.move(b.x+b.width*.3,b.y+b.height*.3);await page.mouse.down();await page.mouse.move(b.x+b.width*.7,b.y+b.height*.7,{steps:4});await page.waitForTimeout(850);assert.equal(await page.evaluate(()=>window.__putCalls),before);await page.mouse.up();await page.waitForFunction(()=>window.__board.strokes.length===2);assert.deepEqual(await page.evaluate(()=>({color:window.__board.strokes.at(-1).color,brush:window.__board.strokes.at(-1).brush,width:window.__board.strokes.at(-1).width})),{color:'#F04452',brush:'neon',width:12});
- await tool('Gomma');await page.mouse.click(b.x+b.width*.7,b.y+b.height*.5);await page.waitForFunction(()=>window.__board.strokes.length===1);
+ await tool('Gomma');await page.mouse.click(b.x+b.width*.7,b.y+b.height*.5);await page.waitForFunction(()=>window.__board.strokes.length===2&&window.__board.strokes.some(s=>s.erasures?.length));
+ await page.getByRole('button',{name:'Annulla',exact:true}).click();await page.waitForFunction(()=>window.__board.strokes.length===1);
  await page.getByRole('button',{name:'Annulla',exact:true}).click();await page.waitForFunction(()=>window.__board.strokes.length===0);
  // Temporary strokes never enter autosave or the explicit gallery snapshot.
  await page.getByRole('button',{name:'Pennello',exact:true}).click();await page.getByRole('button',{name:'Mano libera',exact:true}).click();await page.getByRole('button',{name:'Scompare in 10s · Disattivo',exact:true}).click();await page.getByRole('button',{name:'Fatto',exact:true}).click();await draw();await page.getByText('1/60 tratti',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.__board.strokes.length),0);

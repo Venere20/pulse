@@ -65,6 +65,15 @@ function localDemo() {
         return json({ week_start: body.p_week, revision: Number(db.deep_talk_versions?.[body.p_week] || 0), marks, answers });
       }
       if (rpc === 'badge_pulse_history') return json([]);
+      if (rpc === 'save_visit_memory') {
+        const visit = (db.visits || []).find(row => row.id === body.p_visit);
+        if (!visit) return json({ message: 'Incontro non disponibile' }, 404);
+        const actual = { note: visit.memory_notes || '', photos: visit.memory_photos || [], settings: visit.memory_photo_settings || {} };
+        if (JSON.stringify(actual) !== JSON.stringify(body.p_expected)) return json({ message: 'Il partner ha modificato questo ricordo. Annulla e riapri per aggiornare le foto.', code: '40001' }, 409);
+        Object.assign(visit, { memory_notes: body.p_note.trim() || null, memory_photos: body.p_photos, memory_photo_settings: body.p_settings });
+        persist(); return json(null);
+      }
+
       return json({ message: 'Questa azione richiede il backend reale e non è simulata nella demo.', code: 'DEMO_UNSUPPORTED' }, 501);
     }
     if (url.pathname === '/functions/v1/visit-cover-search' && method === 'POST') {

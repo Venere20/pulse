@@ -19,6 +19,7 @@ const imports = {
   '../ui/layout': { Screen: 'Screen', Header: 'Header' },
   '../ui/primitives': { Card: 'Card', T: 'T', Row: 'Row' },
   '../ui/Icon': { Icon: 'Icon' },
+  '../features/inbox/CategoryNotifications': { useCategoryNotifications: () => () => false, NotificationDot: 'Dot' },
 };
 function load(source) {
   const module = { exports: {} };

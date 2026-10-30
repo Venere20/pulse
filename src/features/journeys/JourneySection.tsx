@@ -25,6 +25,7 @@ export function JourneySection({ visit, onChanged, onSelectMeeting }: {
   const [confirming, setConfirming] = useState(false);
   const [values, setValues] = useState<string[]>(Array(6).fill(''));
   const [roundTrip, setRoundTrip] = useState(true);
+  const [expectedLegs, setExpectedLegs] = useState<JourneyLeg[]>([]);
   const [criterion, setCriterion] = useState<MidpointCriterion>('time');
   const context = JSON.stringify([current.travel_preferences, d.myCity, d.partnerCity]);
   const [candidates, setCandidates] = useState<{ context: string; rows: MeetingCandidate[] } | null>(null);
@@ -32,6 +33,7 @@ export function JourneySection({ visit, onChanged, onSelectMeeting }: {
   const distance = journeyDistance(current);
   const refresh = async () => { await Promise.all([rows.refresh(), onChanged()]); };
   const edit = () => {
+    setExpectedLegs(current.journey_plan?.legs ?? []);
     const sums = [0, 0, 0, 0, 0, 0];
     for (const leg of current.journey_plan?.legs ?? []) {
       const group = leg.participants.length === 2 ? 2 : leg.participants[0] === d.userId ? 0 : 1;
@@ -56,7 +58,7 @@ export function JourneySection({ visit, onChanged, onSelectMeeting }: {
         participants: group === 2 ? [d.userId, d.partnerId] : [group === 0 ? d.userId : d.partnerId],
         direction: i < 3 ? 'out' : 'back', distance_m: Math.round(km * 1000), source: 'manual' };
     });
-    await featureRpc('save_visit_journey', { p_visit: visit.id, p_legs: legs }); setOpen(false); await refresh();
+    await featureRpc('save_visit_journey_checked', { p_visit: visit.id, p_expected: expectedLegs, p_legs: legs }); setOpen(false); await refresh();
   });
   const suggest = () => run(async () => {
     const { data, error } = await supabase.functions.invoke('journey-midpoint-motis', { body: { visitId: visit.id } });

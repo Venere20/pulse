@@ -9,6 +9,18 @@ export interface ReleaseNote {
 // reuse an id or edit the meaning of an already published entry.
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    id: '2026-10-30-salvataggi-protetti', date: '2026-10-30',
+    title: 'Ricordi e percorsi: salvataggi più sicuri',
+    changes: [
+      'Ricordi: una bozza aperta prima delle modifiche del partner non può sovrascrivere o cancellare le sue nuove foto. In caso di conflitto, conserva il pensiero e riapri il ricordo aggiornato.',
+      'Foto: annullare una bozza verifica prima il salvataggio online, così una risposta persa per problemi di rete non causa cancellazioni.',
+      'Percorsi: i tragitti personali dei due partner hanno identificativi distinti. I salvataggi di gruppi diversi vengono accorpati; le modifiche concorrenti allo stesso tragitto vengono segnalate.',
+      'Ricalcolare le tappe conserva l’alternativa scelta e aggiorna soltanto i tratti dipendenti. Un errore interrompe chiaramente l’avanzamento e consente di riprovare.',
+      'Punto di incontro: scegliendo Metro e Treno vengono considerate entrambe le famiglie ferroviarie.',
+      'Webapp: migliorato il ritorno alla schermata precedente quando premi Indietro subito dopo un ricaricamento.',
+    ],
+  },
+  {
     id: '2026-10-30-percorsi-orari', date: '2026-10-30',
     title: 'Correzioni del pianificatore',
     changes: [

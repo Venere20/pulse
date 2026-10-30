@@ -18,39 +18,50 @@ const clock=(t:string)=>new Date(t).toLocaleTimeString('it-IT',{timeZone:'Europe
 const dateParts=(time:number)=>Object.fromEntries(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Rome',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(time).map(p=>[p.type,p.value]));
 export function RoutePlanner({visit,userId,partnerId,myCity,onChanged}:{visit:Visit;userId:string;partnerId:string;myCity:string;onChanged:()=>Promise<unknown>}){
  const {busy,run}=useFeatureAction();const [opened,setOpened]=useState(false);
+ const [expected,setExpected]=useState<JourneyLeg[]>(visit.journey_plan?.legs??[]);
  const [who,setWho]=useState<'me'|'partner'|'both'>('both'),[direction,setDirection]=useState<'out'|'back'>('out');
  const [day,setDay]=useState(()=>{const p=dateParts(Date.now());return `${p.year}-${p.month}-${p.day}`;}),[hour,setHour]=useState('10:00');
  const [points,setPoints]=useState<Place[]>([central]),[stages,setStages]=useState<Stage[]>([]),[query,setQuery]=useState(''),[places,setPlaces]=useState<Place[]>([]);
  const [island,setIsland]=useState(/\bischia\b/i.test(myCity)),[message,setMessage]=useState('');
  const invalidate=(next=points)=>{setPoints(next);setStages(next.slice(1).map((_,i)=>({mode:stages[i]?.mode??'walk',options:[],choice:0})));setMessage('Percorso modificato: ricalcola prima di salvare.');};
  const api=async(body:Record<string,unknown>)=>{const {data,error}=await supabase.functions.invoke('journey-plan',{body:{visitId:visit.id,...body}});if(error||data?.error){let text=data?.error;if(!text&&error&&'context'in error){try{text=(await (error.context as Response).json()).error;}catch{}}throw Error(text||'Servizio dei percorsi non disponibile. Puoi inserire i chilometri manualmente.');}return data;};
- const chooseWho=(value:typeof who)=>{setWho(value);invalidate();};
+ const chooseWho=(value:typeof who)=>{setWho(value);setExpected(visit.journey_plan?.legs??[]);invalidate();};
  const calculate=()=>run(async()=>{
-  const p=await import('./routeTime');let time=p.italianDeparture(day,hour);const next:Stage[]=stages.map(s=>({...s,options:[],choice:0}));setStages(next);
+  try {
+  const p=await import('./routeTime');let time=p.italianDeparture(day,hour);const next:Stage[]=stages.map(s=>({...s}));
   time+=points[0].stay*60000;
   for(let i=0;i<next.length;i++){
-   if(i)await new Promise(resolve=>setTimeout(resolve,1100));
-   const at=dateParts(time);setMessage(`Calcolo tratto ${i+1} di ${next.length}…`);
-   const data=await api({preset:'shared',from:points[i],to:points[i+1],mode:next[i].mode,direction,day:`${at.year}-${at.month}-${at.day}`,hour:`${at.hour}:${at.minute}`});
-   next[i]={...next[i],options:data.options,choice:0};setStages([...next]);const option=next[i].options[0];
+   // A choice only invalidates dependent stages; preserve its valid prefix.
+   if(!next[i].options[next[i].choice]?.complete||next[i].options[next[i].choice].uncertain){
+    if(i)await new Promise(resolve=>setTimeout(resolve,1100));
+    const at=dateParts(time);setMessage(`Calcolo tratto ${i+1} di ${next.length}…`);
+    const data=await api({preset:'shared',from:points[i],to:points[i+1],mode:next[i].mode,direction,day:`${at.year}-${at.month}-${at.day}`,hour:`${at.hour}:${at.minute}`});
+    next[i]={...next[i],options:data.options,choice:0};setStages([...next]);
+   }
+   const option=next[i].options[next[i].choice];
    if(!option?.complete||option.uncertain){setMessage('Un tratto non è disponibile o ha una distanza incompleta. Cambia mezzo o orario.');return;}
    time=Math.ceil((Date.parse(option.end)+points[i+1].stay*60000)/60000)*60000;
   }setMessage('Rivedi le opzioni e conferma le tratte percorse.');
+  } catch(error) {
+   setMessage('Calcolo interrotto. Controlla i dati o riprova tra poco; le tappe già calcolate restano disponibili.');
+   throw error;
+  }
  });
  const save=()=>run(async()=>{
   if(!stages.length||stages.some(s=>!s.options[s.choice]?.complete||s.options[s.choice].uncertain))throw Error('Calcola tutte le tappe prima di salvare.');
   if(!await confirmAction('Conferma percorso','Le tappe sostituiranno le tratte dello stesso gruppo e direzione, aggiornando statistiche e traguardi anche per incontri passati.','Conferma'))return;
   const participants=who==='both'?[userId,partnerId]:[who==='me'?userId:partnerId];
+  const groupId=participants.length===2?'shared':participants[0];
   const keep=(visit.journey_plan?.legs??[]).filter(l=>l.direction!==direction||l.participants.length!==participants.length||!participants.every(id=>l.participants.includes(id)));
-  const legs:JourneyLeg[]=stages.map((s,i)=>({id:`route-${who}-${direction}-${i}`,from:points[i].name,to:points[i+1].name,mode:s.mode==='walk'?'Cammino':s.mode==='metro'?'Metro':'Treno',participants,direction,distance_m:s.options[s.choice].meters!,source:'api'}));
-  if(who==='me'&&island){const endpoint=direction==='out'?points[0]:points.at(-1)!;if(Math.abs(endpoint.lat-beverello.lat)>.003||Math.abs(endpoint.lon-beverello.lon)>.003)throw Error('Per aggiungere i 33 km del mare, la parte terrestre deve iniziare a Beverello (andata) o terminarvi (ritorno).');const sea:JourneyLeg={id:`sea-${who}-${direction}`,from:direction==='out'?'Ischia Porto':beverello.name,to:direction==='out'?beverello.name:'Ischia Porto',mode:'Aliscafo',participants,direction,distance_m:33000,source:'reference'};if(direction==='out')legs.unshift(sea);else legs.push(sea);}
+  const legs:JourneyLeg[]=stages.map((s,i)=>({id:`route-${groupId}-${direction}-${i}`,from:points[i].name,to:points[i+1].name,mode:s.mode==='walk'?'Cammino':s.mode==='metro'?'Metro':'Treno',participants,direction,distance_m:s.options[s.choice].meters!,source:'api'}));
+  if(who==='me'&&island){const endpoint=direction==='out'?points[0]:points.at(-1)!;if(Math.abs(endpoint.lat-beverello.lat)>.003||Math.abs(endpoint.lon-beverello.lon)>.003)throw Error('Per aggiungere i 33 km del mare, la parte terrestre deve iniziare a Beverello (andata) o terminarvi (ritorno).');const sea:JourneyLeg={id:`sea-${groupId}-${direction}`,from:direction==='out'?'Ischia Porto':beverello.name,to:direction==='out'?beverello.name:'Ischia Porto',mode:'Aliscafo',participants,direction,distance_m:33000,source:'reference'};if(direction==='out')legs.unshift(sea);else legs.push(sea);}
   if(keep.length+legs.length>40)throw Error('Il viaggio completo può contenere al massimo 40 tratti.');
-  await featureRpc('save_visit_journey',{p_visit:visit.id,p_legs:[...keep,...legs]});await onChanged();setMessage('Percorso salvato: chilometri e statistiche aggiornati.');
+  await featureRpc('save_visit_journey_group',{p_visit:visit.id,p_participants:participants,p_direction:direction,p_expected:expected,p_legs:legs});setExpected(legs);await onChanged();setMessage('Percorso salvato: chilometri e statistiche aggiornati.');
  });
- if(!opened)return <Button label="Pianifica percorsi e tappe" variant="secondary" disabled={busy} onPress={()=>setOpened(true)} />;
+ if(!opened)return <Button label="Pianifica percorsi e tappe" variant="secondary" disabled={busy} onPress={()=>{setExpected(visit.journey_plan?.legs??[]);setOpened(true);}} />;
  return <Card><View pointerEvents={busy?'none':'auto'} style={{gap:12}}><T v="title">Percorsi e tappe</T><T tone="muted">Scegli i luoghi in ordine. I tratti insieme contano una sola volta. Andata e ritorno si calcolano separatamente.</T>
   <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{([['me','Il mio percorso'],['partner','Percorso del partner'],['both','Insieme']]as const).map(([v,l])=><Chip key={v} label={l} selected={who===v} onPress={busy?undefined:()=>chooseWho(v)} />)}</View>
-  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['out','back']as const).map(v=><Chip key={v} label={v==='out'?'Andata / giornata':'Ritorno'} selected={direction===v} onPress={busy?undefined:()=>{setDirection(v);invalidate();}} />)}</View>
+  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['out','back']as const).map(v=><Chip key={v} label={v==='out'?'Andata / giornata':'Ritorno'} selected={direction===v} onPress={busy?undefined:()=>{setDirection(v);setExpected(visit.journey_plan?.legs??[]);invalidate();}} />)}</View>
   <DateField label="Giorno del percorso" value={day} disabled={busy} onChange={v=>{setDay(v);invalidate();}} />
   <Input label="Partenza · ora italiana (HH:MM)" value={hour} maxLength={5} editable={!busy} onChangeText={v=>{setHour(v);invalidate();}} />
   <T v="caption" tone="muted">Usa due cifre per le ore: per esempio 07:10, non 7:10.</T>

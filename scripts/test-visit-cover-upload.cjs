@@ -1,16 +1,16 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
 const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 async function main(){
- let uploads=[],removals=[],fetches=0;
- const storage={from:bucket=>{assert.equal(bucket,'visit-covers');return {upload:async(...args)=>{uploads.push(args);return {error:null}},remove:async(paths)=>{removals.push(paths);return {error:null}}}}};
- const exports={};vm.runInNewContext(compile(fs.readFileSync('src/services/visitCovers.ts','utf8')),{exports,require:()=>({supabase:{storage}}),fetch:async()=>{fetches++;return {ok:true,headers:{get:()=> 'image/png; charset=binary'},arrayBuffer:async()=>new ArrayBuffer(4)}},Date,Math,Error});
- const path=await exports.uploadVisitCover('visit',{uri:'local'});assert.match(path,/^visit\/\d+-[a-z0-9]+\.png$/);assert.equal(uploads[0][2].upsert,false);assert.equal(uploads[0][2].contentType,'image/png');
- await assert.rejects(exports.uploadVisitCover('visit',{uri:'local',fileSize:8388609}),/8 MB/);assert.equal(fetches,1);
- await assert.rejects(exports.uploadVisitCover('visit',{uri:'local',mimeType:'image/gif'}),/Formato/);
- await exports.removeVisitCover(path);assert.equal(JSON.stringify(removals[0]),JSON.stringify([path]));
- for(const mode of ['large','read','upload']){
- const out={};vm.runInNewContext(compile(fs.readFileSync('src/services/visitCovers.ts','utf8')),{exports:out,require:()=>({supabase:{storage:{from:()=>({upload:async()=>({error:new Error('upload failed')})})}}}),fetch:async()=>({ok:mode!=='read',headers:{get:()=> 'image/jpeg'},arrayBuffer:async()=>new ArrayBuffer(mode==='large'?8388609:4)}),Date,Math,Error});
- await assert.rejects(out.uploadVisitCover('visit',{uri:'local'}),mode==='large'?/8 MB/:mode==='read'?/leggere/:/upload failed/);
+ let uploads=[],removals=[],prepared=[];
+ const storage={from:bucket=>{assert.equal(bucket,'visit-covers');return {upload:async(...args)=>{uploads.push(args);return {error:null}},remove:async paths=>{removals.push(paths);return {error:null}}}}};
+ const exports={};const asset={uri:'local'};
+ vm.runInNewContext(compile(fs.readFileSync('src/services/visitCovers.ts','utf8')),{exports,require:name=>name==='./photoPreparation'?{preparePhoto:async(...args)=>{prepared.push(args);return {bytes:new Uint8Array(4),mime:'image/png',extension:'png'};}}:{supabase:{storage}},Date,Math,Error});
+ const path=await exports.uploadVisitCover('visit',asset);assert.match(path,/^visit\/\d+-[a-z0-9]+\.png$/);assert.equal(uploads[0][2].upsert,false);assert.equal(uploads[0][2].contentType,'image/png');
+ assert.equal(prepared[0][0],asset);assert.deepEqual(prepared[0].slice(1),[8*1024*1024,1600],'Upload must delegate size/format/encoding to the tested photo preparation service');
+ await exports.removeVisitCover(path);assert.deepEqual(Array.from(removals[0]),[path]);
+ for(const stage of ['prepare','upload']){const out={},failure=new Error(stage+' failed');
+ vm.runInNewContext(compile(fs.readFileSync('src/services/visitCovers.ts','utf8')),{exports:out,require:name=>name==='./photoPreparation'?{preparePhoto:async()=>{if(stage==='prepare')throw failure;return {bytes:new Uint8Array(4),mime:'image/jpeg',extension:'jpg'};}}:{supabase:{storage:{from:()=>({upload:async()=>({error:failure})})}}},Date,Math,Error});
+ await assert.rejects(out.uploadVisitCover('visit',asset),new RegExp(stage+' failed'));
  }
  const source=fs.readFileSync('src/screens/VisitDetailScreen.tsx','utf8');const handlers=source.slice(source.indexOf('  const choosePersonalCover ='),source.indexOf('  const expenses ='));
  const saveModule={};vm.runInNewContext(compile(fs.readFileSync('src/services/saveState.ts','utf8')),{exports:saveModule,Error,Set,Map});

@@ -2,13 +2,13 @@
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module'),assert=require('node:assert/strict');
 const {chromium,webkit}=require('C:/Users/39345/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000000002',V='00000000-0000-4000-8000-000000000010';
-async function serve(){const file=path.resolve('scripts/serve-local-demo.cjs'),m=new Module(file,module);m.filename=file;m.paths=module.paths;m._compile(fs.readFileSync(file,'utf8').replace("path.resolve(__dirname, '../.feature-build/design-system-2-web')",JSON.stringify(path.resolve('.feature-build/release-20261030-web'))),file);await new Promise(r=>m.exports.listen(0,'127.0.0.1',r));return m.exports;}
+async function serve(){const file=path.resolve('scripts/serve-local-demo.cjs'),m=new Module(file,module);m.filename=file;m.paths=module.paths;m._compile(fs.readFileSync(file,'utf8').replace("path.resolve(__dirname, '../.feature-build/design-system-2-web')",JSON.stringify(path.resolve(process.env.PULSE_TEST_WEB_ROOT||'.feature-build/bugfix-20261030-web'))),file);await new Promise(r=>m.exports.listen(0,'127.0.0.1',r));return m.exports;}
 async function run(engine,width,base){
  const browser=await(engine==='webkit'?webkit:chromium).launch({headless:true,...(engine==='chromium'?{executablePath:'C:/Users/39345/AppData/Local/ms-playwright/chromium-1194/chrome-win/chrome.exe'}:{})});
  try{
   const c=await browser.newContext({viewport:{width,height:1000},hasTouch:width<500,isMobile:width<500});await c.route('**/*',r=>r.request().url().startsWith(base+'/')?r.continue():r.abort());await c.routeWebSocket('**/*',ws=>ws.close());
   await c.addInitScript(({A,B,V})=>{
-   localStorage.setItem('pulse-local-demo-login-v1','yes');localStorage.setItem('pulse-draft:release-notes:'+A,'2026-10-30-grande-aggiornamento');
+   localStorage.setItem('pulse-local-demo-login-v1','yes');localStorage.setItem('pulse-draft:release-notes:'+A,'2026-10-30-salvataggi-protetti');
    document.addEventListener('DOMContentLoaded',()=>{
     const original=window.fetch;window.__journeyCalls=[];
     const v={id:V,title:'Viaggio di prova',start_date:'2090-01-01',end_date:'2090-01-02',location:'Roma',meeting_point:'Napoli Centrale',meeting_lat:40.85,meeting_lon:14.27,travel_km:110,status:'planned',created_by:A,cover_source:'destination',cover_remote_url:'/__demo/photo.svg',travel_preferences:{[A]:['Aliscafo','Metro'],[B]:['Treno']}};
@@ -27,7 +27,7 @@ async function run(engine,width,base){
       const rpc=u.pathname.split('/').pop();window.__journeyCalls.push({rpc,body});
       if(rpc==='badge_pulse_history'){const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Rome'}).format(new Date());return json([{day,count:1,sender_ids:[A]},{day,count:0,sender_ids:[],server_day:day,server_now:new Date().toISOString(),meta_only:true}]);}
       if(rpc==='set_my_visit_transport'){v.travel_preferences[A]=body.p_modes;return json(null);}
-      if(rpc==='save_visit_journey'){
+      if(rpc==='save_visit_journey_checked'){
        v.journey_plan={version:1,counting:'shared-once',confirmed_at:new Date().toISOString(),meeting_point:v.meeting_point,legs:body.p_legs};return json(null);
       }
       if(rpc==='open_packing_list')return json('list');

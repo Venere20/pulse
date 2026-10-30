@@ -18,7 +18,7 @@ async function run(browser,base,engine,route){
  const p=await c.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(12000);const button=n=>p.getByRole('button',{name:n,exact:true});
  const pixel=async(x,y)=>p.evaluate(([x,y])=>{const c=document.querySelector('canvas');return c.getContext('2d').getImageData(Math.floor(x*c.width/1000),Math.floor(y*c.height/1000),1,1).data[3];},[x,y]);
  try{
-  await p.goto(base+route);await p.locator('canvas').waitFor();await p.waitForFunction(()=>document.querySelector('canvas').width>100);assert.ok(await pixel(700,500)>100);
+  await p.goto(base+route);await p.locator('canvas').waitFor();await p.waitForFunction(()=>{const c=document.querySelector('canvas');return c.width>100&&c.getContext('2d').getImageData(Math.floor(.7*c.width),Math.floor(.5*c.height),1,1).data[3]>100;});assert.ok(await pixel(700,500)>100);
   if(route==='/canvas'||!v22)await button(route==='/canvas'?'Pennello':'Strumenti').click();await button('Gomma').click();if(route==='/canvas'||!v22)await button('Fatto').click();const canvas=p.locator('canvas');await canvas.scrollIntoViewIfNeeded();const box=await canvas.boundingBox();
   await p.mouse.click(box.x+box.width*.9,box.y+box.height*.5);await p.waitForFunction(()=>window.__eraseCalls===1);
   await p.waitForFunction(()=>{const c=document.querySelector('canvas');return c.getContext('2d').getImageData(Math.floor(.895*c.width),Math.floor(.5*c.height),1,1).data[3]<5;});
