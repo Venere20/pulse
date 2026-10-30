@@ -9,6 +9,14 @@ export interface ReleaseNote {
 // reuse an id or edit the meaning of an already published entry.
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    id: '2026-10-30-percorsi-orari', date: '2026-10-30',
+    title: 'Correzioni del pianificatore',
+    changes: [
+      'Il pianificatore chiarisce il formato dell’ora: usa sempre due cifre, per esempio 07:10.',
+      'Corretto il recupero degli incontri: il pianificatore riconosce le impostazioni di entrambi i profili.',
+    ],
+  },
+  {
     id: '2026-10-30-grande-aggiornamento', date: '2026-10-30',
     title: 'Più spazio ai vostri ricordi e ai vostri viaggi',
     changes: [
