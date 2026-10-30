@@ -8,8 +8,9 @@ async function serve(){const file=path.resolve('scripts/serve-local-demo.cjs'),m
   const close=p.getByRole('button',{name:'Ho letto, continua',exact:true});await close.waitFor();
   const box=await close.boundingBox();assert.ok(box.y>=0&&box.y+box.height<=height,'Dismiss remains within viewport');
   const text=p.getByText('Questo riepilogo rimane consultabile in I tuoi avvisi → Riepilogo degli aggiornamenti.',{exact:false});await text.scrollIntoViewIfNeeded();assert.ok(await text.isVisible());
-  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await p.screenshot({path:`.feature-build/release-notes-${engine}-${width}x${height}.png`});await close.click();await close.waitFor({state:'hidden'});
+  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await p.screenshot({animations:'disabled',path:`.feature-build/release-notes-${engine}-${width}x${height}.png`});await close.click();await close.waitFor({state:'hidden'});
   await p.goto(base+'/avvisi');await p.getByRole('button',{name:'Riepilogo degli aggiornamenti',exact:false}).click();await p.getByText('Più spazio ai vostri ricordi e ai vostri viaggi',{exact:true}).waitFor();await p.getByText('Ricordi degli incontri: fino a cinque foto per ricordo, anche selezionate insieme.',{exact:false}).waitFor();
   await p.reload();assert.equal(await close.count(),0);assert.deepEqual(errors,[]);console.log(`PASS update modal + inbox archive ${engine} ${width}x${height}: all changes scrollable, footer visible, dismiss persistent, no overflow/errors.`);
  }finally{await browser.close();}}
  }finally{await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;});
+
