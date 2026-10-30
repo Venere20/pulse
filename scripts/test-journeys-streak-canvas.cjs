@@ -27,7 +27,7 @@ assert.equal(packingGroups([{label:'Caricatore',category:'other',checked:true}],
  let setup=fs.readFileSync('scripts/test-feature-database.cjs','utf8').match(/await db.exec\(`([\s\S]*?)`\);/)[1];for(const[k,v]of Object.entries({A,B,AA,BB}))setup=setup.replaceAll('${'+k+'}',v);await db.exec(setup);
  for(const f of fs.readdirSync('supabase/migrations').filter(f=>f.startsWith('20261010')||f.startsWith('20261011')).sort())await db.exec(fs.readFileSync(path.join('supabase/migrations',f),'utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261017130000_persistent_canvas.sql','utf8'));
- await db.exec("alter table public.visits add column if not exists meeting_point text;alter table public.visits add column if not exists cover_source text;alter table public.visits add column if not exists cover_storage_path text;alter table public.visits add column if not exists cover_remote_url text;alter table public.couple_settings add column user_id uuid;alter table public.couple_settings add column city text;");
+ await db.exec("alter table public.visits add column if not exists meeting_point text;alter table public.visits add column if not exists cover_source text;alter table public.visits add column if not exists cover_storage_path text;alter table public.visits add column if not exists cover_remote_url text;alter table public.couple_settings add column user_id text;alter table public.couple_settings add column city text;");
  await db.query('insert into public.couple_settings(user_id,city)values($1,$2),($3,$4)',[A,'Ischia',B,'San Marcellino']);
  const photo=fs.readFileSync('supabase/migrations/20261018120000_capsule_story_photo_layouts.sql','utf8');await db.exec(photo.slice(photo.indexOf('create function public.checked_photo_settings'),photo.indexOf('create function public.validate_shared_photo_settings')));
  await db.query("insert into public.pulse_logs(sender_id,created_at)values($1,'2020-01-01T12:00Z'),($2,'2020-01-01T13:00Z')",[A,B]);
@@ -38,8 +38,18 @@ assert.equal(packingGroups([{label:'Caricatore',category:'other',checked:true}],
  await login(BB);await db.query('select public.set_my_visit_transport($1,$2)',[id,['Treno','Cammino']]);
  await assert.rejects(db.query('update public.visits set travel_preferences=$1 where id=$2',[{[A]:['Auto']},id]),/solo i tuoi/);
  const prefs=(await db.query('select travel_preferences from public.visits where id=$1',[id])).rows[0].travel_preferences;assert.equal(prefs[A].length,3);assert.equal(prefs[B].length,2);
+ await assert.rejects(db.query('select public.get_journey_context($1)',[id]),/operator does not exist: text = uuid/,'Reproduce the real schema mismatch before applying the fix');
+ await db.exec('reset role');
+ await db.exec(fs.readFileSync('supabase/migrations/20261030111131_journey_context_profile_types.sql','utf8'));
+ await db.exec("insert into public.couple_settings(user_id,city)values('legacy-platform-key','Not the partner');");
+ await login(BB);
  const context=(await db.query('select public.get_journey_context($1) c',[id])).rows[0].c;
  assert.equal(context.me,B);assert.equal(context.mine.city,'San Marcellino');assert.equal(context.partner.city,'Ischia');assert.deepEqual(context.mine.modes,['Treno','Cammino']);
+ assert.equal(context.partner.id,A,'Only the actual partner profile is selected');
+ await login(AA);
+ const reverseContext=(await db.query('select public.get_journey_context($1) c',[id])).rows[0].c;
+ assert.equal(reverseContext.mine.city,'Ischia');assert.equal(reverseContext.partner.id,B);assert.equal(reverseContext.partner.city,'San Marcellino');
+ await login(BB);
  await db.query('select public.save_visit_journey($1,$2)',[id,JSON.stringify(legs)]);
  let row=(await db.query('select * from public.visits where id=$1',[id])).rows[0];assert.equal(row.journey_totals.total_m,420000);assert.equal(row.journey_totals.shared_m,200000);
  await db.query('update public.visits set journey_totals=$1 where id=$2',[{total_m:99999999},id]);assert.equal((await db.query('select journey_totals from visits where id=$1',[id])).rows[0].journey_totals.total_m,420000,'Forged totals are recomputed');
